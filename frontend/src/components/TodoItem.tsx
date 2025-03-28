@@ -2,10 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { Todo } from '../features/todos/Todo';
 import { toggleTodo, removeTodo } from '../features/todos/todoSlice';
-
-// 一時的に直接APIと通信
-const API_URL = 'http://localhost:8000/api';
-const DEV_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciIsImV4cCI6MTc0MDM0NTIwMH0.YpP9jcmLxzZMVh95x8nrjtrBnMGU9NqVCXISr--wPbU";
+import { API_BASE_URL } from '../config/api';  // API_BASE_URLをインポート
 import TodoEdit from './TodoEdit'; 
 import { useDrag, useDrop } from 'react-dnd';
 
@@ -48,6 +45,60 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
 
   drag(drop(ref));
 
+  // チェックボックスの変更処理
+  const handleToggle = async () => {
+    const authToken = localStorage.getItem('authToken');
+    if (!authToken) {
+      console.error('認証トークンがありません');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ completed: !todo.completed })
+      });
+      
+      if (response.ok) {
+        dispatch(toggleTodo(todo.id));
+      } else {
+        console.error('Toggle todo failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error updating todo:', error);
+    }
+  };
+
+  // 削除処理
+  const handleDelete = async () => {
+    const authToken = localStorage.getItem('authToken');
+    if (!authToken) {
+      console.error('認証トークンがありません');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      
+      if (response.ok) {
+        dispatch(removeTodo(todo.id));
+      } else {
+        console.error('Delete todo failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error deleting todo:', error);
+    }
+  };
+
   return (
     <div
       ref={ref}
@@ -62,28 +113,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
             className="w-8 h-8 mr-4"
             type="checkbox"
             checked={todo.completed}
-            onChange={async () => {
-              try {
-                // 直接APIにリクエスト
-                const response = await fetch(`${API_URL}/todos/${todo.id}`, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${DEV_TOKEN}`
-                  },
-                  body: JSON.stringify({ completed: !todo.completed })
-                });
-                
-                if (response.ok) {
-                  // Reduxステートを更新
-                  dispatch(toggleTodo(todo.id));
-                } else {
-                  console.error('Toggle todo failed:', await response.text());
-                }
-              } catch (error) {
-                console.error('Error updating todo:', error);
-              }
-            }}
+            onChange={handleToggle}  // インラインの関数をhandleToggleに変更
           />
         
           {/* タイトルと説明を縦に並べる */}
@@ -104,26 +134,7 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
         {/* 削除ボタン */}
         <button
           className="bg-blue-800 text-white px-3 py-1 rounded"
-          onClick={async () => {
-            try {
-              // 直接APIにリクエスト
-              const response = await fetch(`${API_URL}/todos/${todo.id}`, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': `Bearer ${DEV_TOKEN}`
-                }
-              });
-              
-              if (response.ok) {
-                // Reduxステートを更新
-                dispatch(removeTodo(todo.id));
-              } else {
-                console.error('Delete todo failed:', await response.text());
-              }
-            } catch (error) {
-              console.error('Error deleting todo:', error);
-            }
-          }}
+          onClick={handleDelete}  // インラインの関数をhandleDeleteに変更
         >
           削除
         </button>

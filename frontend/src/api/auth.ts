@@ -2,7 +2,7 @@ import { API_BASE_URL } from '../config/api';
 
 export interface LoginResponse {
   access_token: string;
-  token_type: string;
+  token_type: 'bearer';
 }
 
 export const login = async (username: string, password: string): Promise<LoginResponse> => {
@@ -20,7 +20,7 @@ export const login = async (username: string, password: string): Promise<LoginRe
       'accept': 'application/json',
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    credentials: 'include'  // クッキーを含める
+    body: formData,
   });
 
   if (!response.ok) {

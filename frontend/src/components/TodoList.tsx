@@ -78,7 +78,7 @@ const TodoList: React.FC = () => {
         }
 
         // Todoデータの取得（認証トークン付き）
-        const response = await fetch(`${API_URL}/api/todos`, {
+        const response = await fetch(`${API_URL}/todos`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
