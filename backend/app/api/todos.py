@@ -1,88 +1,87 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
+from ..database import get_db
+from ..models import Todo, User
+from ..schemas import TodoResponse, TodoCreate
+from ..auth import get_current_user
+from datetime import datetime
 
-from app import models, schemas, auth
-from app.database import get_db
+router = APIRouter(
+    prefix="/todos",
+    tags=["todos"]
+)
 
-router = APIRouter()
-
-@router.get("/todos", response_model=List[schemas.Todo])
+@router.get("/", response_model=List[TodoResponse])
 def read_todos(
-    skip: int = 0, 
-    limit: int = 100, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
-    todos = db.query(models.Todo).filter(models.Todo.owner_id == current_user.id).offset(skip).limit(limit).all()
+    todos = db.query(Todo).filter(Todo.owner_id == current_user.id).all()
     return todos
 
-@router.post("/todos", response_model=schemas.Todo, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TodoResponse)
 def create_todo(
-    todo: schemas.TodoCreate, 
+    todo: TodoCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
-    db_todo = models.Todo(**todo.dict(), owner_id=current_user.id)
+    db_todo = Todo(
+        **todo.dict(),
+        owner_id=current_user.id
+    )
     db.add(db_todo)
     db.commit()
     db.refresh(db_todo)
     return db_todo
 
-@router.get("/todos/{todo_id}", response_model=schemas.Todo)
-def read_todo(
-    todo_id: int, 
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+@router.put("/{todo_id}", response_model=dict)
+async def update_todo(
+    todo_id: int,
+    title: str = None,
+    description: str = None,
+    completed: bool = None,
+    priority: int = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    db_todo = db.query(models.Todo).filter(
-        models.Todo.id == todo_id, 
-        models.Todo.owner_id == current_user.id
-    ).first()
-    
-    if db_todo is None:
+    todo = db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == current_user.id).first()
+    if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
-    return db_todo
-
-@router.put("/todos/{todo_id}", response_model=schemas.Todo)
-def update_todo(
-    todo_id: int, 
-    todo: schemas.TodoUpdate, 
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
-):
-    db_todo = db.query(models.Todo).filter(
-        models.Todo.id == todo_id, 
-        models.Todo.owner_id == current_user.id
-    ).first()
     
-    if db_todo is None:
-        raise HTTPException(status_code=404, detail="Todo not found")
-        
-    # Update todo attributes
-    update_data = todo.dict(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(db_todo, key, value)
-        
-    db.add(db_todo)
+    if title is not None:
+        todo.title = title
+    if description is not None:
+        todo.description = description
+    if completed is not None:
+        todo.completed = completed
+    if priority is not None:
+        todo.priority = priority
+    
+    todo.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(db_todo)
-    return db_todo
-
-@router.delete("/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_todo(
-    todo_id: int, 
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
-):
-    db_todo = db.query(models.Todo).filter(
-        models.Todo.id == todo_id, 
-        models.Todo.owner_id == current_user.id
-    ).first()
+    db.refresh(todo)
     
-    if db_todo is None:
+    return {
+        "id": todo.id,
+        "title": todo.title,
+        "description": todo.description,
+        "completed": todo.completed,
+        "priority": todo.priority,
+        "created_at": todo.created_at,
+        "updated_at": todo.updated_at
+    }
+
+@router.delete("/{todo_id}")
+async def delete_todo(
+    todo_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    todo = db.query(Todo).filter(Todo.id == todo_id, Todo.owner_id == current_user.id).first()
+    if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
-        
-    db.delete(db_todo)
+    
+    db.delete(todo)
     db.commit()
-    return None
+    return {"message": "Todo deleted successfully"}

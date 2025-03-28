@@ -1,71 +1,45 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import sys
-import os
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from datetime import timedelta
 
-# 現在のディレクトリを取得
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# バックエンドディレクトリをパスに追加
-backend_dir = os.path.dirname(current_dir) if "app" in current_dir else current_dir
-sys.path.insert(0, backend_dir)
-
-# モジュールのインポート
-from app.models import Base  # app.modelsからBaseをインポート
-from app.database import engine, SessionLocal
-from app.api import todos, users
+from .database import get_db, engine, Base
+from .auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from .api import user, todos  # todosをインポート
 
 # データベーステーブルの作成
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
-# FastAPI アプリの作成
-app = FastAPI(title="Todo API")
+app = FastAPI()
 
-# CORS 設定
-origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-]
-
+# CORSミドルウェアの設定を更新
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # フロントエンドのURL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ルートエンドポイント（ヘルスチェック用）
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "Todo API is running"}
+@app.post("/token")
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
-# ルーターの追加
-app.include_router(users.router, prefix="/api", tags=["users"])
-app.include_router(todos.router, prefix="/api", tags=["todos"])
-
-# 開発用：テストユーザーの作成
-@app.on_event("startup")
-async def startup_event():
-    import auth
-    
-    db = SessionLocal()
-    try:
-        # テストユーザーの確認
-        test_user = db.query(models.User).filter(models.User.username == "testuser").first()
-        
-        # 存在しない場合は作成
-        if not test_user:
-            hashed_password = auth.get_password_hash("password123")
-            test_user = models.User(
-                username="testuser",
-                email="test@example.com",
-                hashed_password=hashed_password
-            )
-            db.add(test_user)
-            db.commit()
-            print("Created test user: testuser")
-    finally:
-        db.close()
+# ルーターを追加
+app.include_router(user.router)
+app.include_router(todos.router)  # todosルーターを追加

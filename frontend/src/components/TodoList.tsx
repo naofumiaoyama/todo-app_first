@@ -8,7 +8,7 @@ import { updateTodos } from '../features/todos/todoSlice';
 import { Todo } from '../features/todos/Todo';
 
 // 一時的に直接APIからデータを取得
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'http://localhost:8000';
 
 // モックデータ（接続できない場合のフォールバック）
 const MOCK_TODOS: Todo[] = [
@@ -57,6 +57,7 @@ const TodoList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useMockData, setUseMockData] = useState(false);
+  const authToken = localStorage.getItem('authToken'); // 認証トークンを取得
 
   // APIから直接データを取得
   useEffect(() => {
@@ -65,33 +66,38 @@ const TodoList: React.FC = () => {
         setLoading(true);
         console.log('Fetching todos from API...');
         
-        // まずAPIサーバーの接続確認
-        try {
-          const healthResponse = await fetch('http://localhost:8000/', {
-            mode: 'no-cors' // CORSを無効にする
-          });
-          console.log('API Health check:', healthResponse.ok ? 'OK' : 'Failed', healthResponse.status);
-        } catch (healthErr) {
-          console.error('API Health check failed:', healthErr);
-          // API接続に失敗した場合はモックデータを使用
-          console.log('Using mock data instead');
+        // 認証トークンがない場合はモックデータを使用
+        if (!authToken) {
           setUseMockData(true);
-          dispatch(updateTodos(MOCK_TODOS));
+          dispatch(updateTodos(MOCK_TODOS.map(todo => ({
+            ...todo,
+            category: '日常'
+          }))));
           setLoading(false);
           return;
         }
-        
-        // Todoデータの取得
-        const response = await fetch(`${API_URL}/todos`, {
+
+        // Todoデータの取得（認証トークン付き）
+        const response = await fetch(`${API_URL}/api/todos`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
+          credentials: 'include'
         });
 
         console.log('API Response status:', response.status);
         
+        if (response.status === 401) {
+          // 認証エラーの場合
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('username');
+          window.location.reload(); // ページをリロードしてログイン画面に戻る
+          return;
+        }
+
         if (!response.ok) {
           const errorText = await response.text();
           console.error('API Response error text:', errorText);
@@ -109,42 +115,36 @@ const TodoList: React.FC = () => {
         }
         
         // バックエンドのTodoをフロントエンドのTodo形式に変換
-        const formattedTodos: Todo[] = data.map((todo: any) => {
-          console.log('Processing todo item:', todo);
-          return {
-            id: todo.id,
-            title: todo.title,
-            description: todo.description || '',
-            completed: todo.completed,
-            dueDate: null, // バックエンドにはないフィールド
-            priority: todo.priority === 1 ? 'low' : todo.priority === 2 ? 'medium' : 'high',
-            status: todo.completed ? 'completed' : 'pending',
-            creationDate: new Date(todo.created_at),
-            completionDate: null,
-            category: 'general',
-          };
-        });
+        const formattedTodos: Todo[] = data.map((todo: any) => ({
+          id: todo.id,
+          title: todo.title,
+          description: todo.description || '',
+          completed: todo.completed,
+          dueDate: null,
+          priority: todo.priority === 1 ? 'low' : todo.priority === 2 ? 'medium' : 'high',
+          status: todo.completed ? 'completed' : 'pending',
+          creationDate: new Date(todo.created_at),
+          completionDate: null,
+          category: '日常',
+        }));
 
         console.log('Formatted todos:', formattedTodos);
         dispatch(updateTodos(formattedTodos));
         setError(null);
       } catch (err) {
         console.error('Error fetching todos:', err);
-        // エラーが発生した場合はモックデータを使用
-        if (!useMockData) {
-          console.log('Using mock data due to error');
-          setUseMockData(true);
-          dispatch(updateTodos(MOCK_TODOS));
-        } else {
-          setError('タスクの取得中にエラーが発生しました。');
-        }
+        setUseMockData(true);
+        dispatch(updateTodos(MOCK_TODOS.map(todo => ({
+          ...todo,
+          category: '日常'
+        }))));
       } finally {
         setLoading(false);
       }
     };
 
     fetchTodos();
-  }, [dispatch, useMockData]);
+  }, [dispatch, useMockData, authToken]); // authTokenを依存配列に追加
 
   useEffect(() => {
     setSortedTodos(todos);

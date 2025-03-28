@@ -15,13 +15,13 @@ class User(UserBase):
     is_active: bool
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Todo schemas
 class TodoBase(BaseModel):
     title: str
     description: Optional[str] = None
-    priority: Optional[int] = 2  # 1=low, 2=medium, 3=high
+    priority: int = 2
 
 class TodoCreate(TodoBase):
     pass
@@ -32,15 +32,15 @@ class TodoUpdate(BaseModel):
     completed: Optional[bool] = None
     priority: Optional[int] = None
 
-class Todo(TodoBase):
+class TodoResponse(TodoBase):
     id: int
     completed: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     owner_id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Token schemas
 class Token(BaseModel):
