@@ -38,10 +38,7 @@ def create_todo(
 @router.put("/{todo_id}", response_model=dict)
 async def update_todo(
     todo_id: int,
-    title: str = None,
-    description: str = None,
-    completed: bool = None,
-    priority: int = None,
+    todo_data: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -49,14 +46,14 @@ async def update_todo(
     if not todo:
         raise HTTPException(status_code=404, detail="Todo not found")
     
-    if title is not None:
-        todo.title = title
-    if description is not None:
-        todo.description = description
-    if completed is not None:
-        todo.completed = completed
-    if priority is not None:
-        todo.priority = priority
+    if "title" in todo_data:
+        todo.title = todo_data["title"]
+    if "description" in todo_data:
+        todo.description = todo_data["description"]
+    if "completed" in todo_data:
+        todo.completed = todo_data["completed"]
+    if "priority" in todo_data:
+        todo.priority = todo_data["priority"]
     
     todo.updated_at = datetime.utcnow()
     db.commit()

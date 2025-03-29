@@ -3,8 +3,10 @@ import { useDispatch } from 'react-redux';
 import { Todo } from '../features/todos/Todo';
 import { toggleTodo, removeTodo } from '../features/todos/todoSlice';
 import { API_BASE_URL } from '../config/api';  // API_BASE_URLをインポート
-import TodoEdit from './TodoEdit'; 
+import TodoEdit from './TodoEdit';
 import { useDrag, useDrop } from 'react-dnd';
+import { useNavigate } from 'react-router-dom';
+
 
 interface TodoItemProps {
   todo: Todo;
@@ -14,6 +16,7 @@ interface TodoItemProps {
 
 const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();  // 追加
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,28 +48,59 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
 
   drag(drop(ref));
 
+  // 認証エラー時の処理を追加
+  const handleAuthError = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('username');
+    navigate('/');  // ログイン画面にリダイレクト
+  };
+
   // チェックボックスの変更処理
   const handleToggle = async () => {
     const authToken = localStorage.getItem('authToken');
     if (!authToken) {
-      console.error('認証トークンがありません');
+      handleAuthError();
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
+      const todoId = typeof todo.id === 'string' ? parseInt(todo.id, 10) : todo.id;
+      console.log(todo.completed);
+      // 現在の状態を反転
+      const newCompleted = !todo.completed;
+      console.log(newCompleted);
+      const response = await fetch(`${API_BASE_URL}/todos/${todoId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'Authorization': `Bearer ${authToken}`
         },
-        body: JSON.stringify({ completed: !todo.completed })
+        body: JSON.stringify({
+          completed: newCompleted
+        })
       });
       
       if (response.ok) {
-        dispatch(toggleTodo(todo.id));
+        const updatedTodo = await response.json();
+        console.log('Updated todo:', updatedTodo);
+        
+        // Todoオブジェクトを更新
+        const newTodo: Todo = {
+          ...todo,
+          completed: updatedTodo.completed,
+          status: updatedTodo.completed ? 'completed' : 'pending'
+        };
+        
+        // Reduxストアを更新
+        dispatch(toggleTodo(newTodo));
+      } else if (response.status === 401) {
+        handleAuthError();
+      } else if (response.status === 404) {
+        console.error('Todo not found:', todoId);
       } else {
-        console.error('Toggle todo failed:', await response.text());
+        const errorText = await response.text();
+        console.error('Toggle todo failed:', errorText);
       }
     } catch (error) {
       console.error('Error updating todo:', error);
@@ -77,20 +111,28 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
   const handleDelete = async () => {
     const authToken = localStorage.getItem('authToken');
     if (!authToken) {
-      console.error('認証トークンがありません');
+      handleAuthError();
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
+      // IDが数値であることを確認
+      const todoId = typeof todo.id === 'string' ? parseInt(todo.id, 10) : todo.id;
+
+      const response = await fetch(`${API_BASE_URL}/todos/${todoId}`, {
         method: 'DELETE',
         headers: {
+          'Accept': 'application/json',
           'Authorization': `Bearer ${authToken}`
         }
       });
       
       if (response.ok) {
         dispatch(removeTodo(todo.id));
+      } else if (response.status === 401) {
+        handleAuthError();
+      } else if (response.status === 404) {
+        console.error('Todo not found:', todoId);
       } else {
         console.error('Delete todo failed:', await response.text());
       }
@@ -99,24 +141,35 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
     }
   };
 
+  // 日付フォーマット関数を英語に
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Not set';
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
   return (
     <div
       ref={ref}
-      className="bg-white shadow-md rounded-lg p-4 mb-4 w-96"  // w-96 で横幅を固定
+      className="bg-white shadow-md rounded-lg p-4 mb-4 w-96"
       style={{ opacity: isDragging ? 0.5 : 1 }}
     >
       <div className="flex items-center justify-between">
-        {/* チェックボックスとタイトル・説明 */}
         <div className="flex items-start">
-          {/* チェックボックス */}
           <input
             className="w-8 h-8 mr-4"
             type="checkbox"
             checked={todo.completed}
-            onChange={handleToggle}  // インラインの関数をhandleToggleに変更
+            onChange={handleToggle}
           />
         
-          {/* タイトルと説明を縦に並べる */}
           <div className="flex flex-col">
             <label
               className="text-2xl truncate cursor-pointer"
@@ -126,30 +179,27 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
               {todo.title}
             </label>
             <label className="text-gray-600">
-              {todo.description || '説明なし'}
+              {todo.description || 'No description'}
             </label>
           </div>
         </div>
 
-        {/* 削除ボタン */}
         <button
           className="bg-blue-800 text-white px-3 py-1 rounded"
-          onClick={handleDelete}  // インラインの関数をhandleDeleteに変更
+          onClick={handleDelete}
         >
-          削除
+          Delete
         </button>
       </div>
 
-      {/* 追加項目の表示 */}
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
-        <p><strong>期限:</strong> {todo.dueDate || '未設定'}</p>
-        <p><strong>優先度:</strong> {todo.priority}</p>
-        <p><strong>ステータス:</strong> {todo.status}</p>
-        <p><strong>作成日:</strong> {todo.creationDate.toLocaleDateString()}</p>
-        <p><strong>カテゴリ:</strong> {todo.category}</p>
+        <p><strong>Due Date:</strong> {formatDate(todo.dueDate)}</p>
+        <p><strong>Priority:</strong> {todo.priority}</p>
+        <p><strong>Status:</strong> {todo.status}</p>
+        <p><strong>Created:</strong> {formatDate(todo.creationDate)}</p>
+        <p><strong>Category:</strong> {todo.category}</p>
       </div>
 
-      {/* 編集モーダル */}
       {isEditModalOpen && (
         <TodoEdit
           addMode={false}

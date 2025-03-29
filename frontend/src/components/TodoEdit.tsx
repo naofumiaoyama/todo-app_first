@@ -1,23 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { addTodo, updateTodo } from '../features/todos/todoSlice'; // Redux actions
-
-// 一時的に直接APIと通信
-const API_URL = 'http://localhost:8000/api';
-const DEV_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciIsImV4cCI6MTc0MDM0NTIwMH0.YpP9jcmLxzZMVh95x8nrjtrBnMGU9NqVCXISr--wPbU";
-
-interface Todo {
-  id: number;
-  title: string;
-  description: string;
-  completed: boolean;
-  dueDate: string | null;
-  priority: 'low' | 'medium' | 'high';
-  status: 'pending' | 'in-progress' | 'completed';
-  creationDate: Date;
-  completionDate: Date | null;
-  category: '仕事' | '日常' | '特別';
-}
+import { API_BASE_URL } from '../config/api';  // API_BASE_URLをインポート
+import { Todo } from '../features/todos/Todo';
 
 interface TodoEditProps {
   addMode: boolean;
@@ -31,7 +16,7 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
   const [description, setDescription] = useState(todo?.description || '');
   const [dueDate, setDueDate] = useState(todo?.dueDate || '');
   const [priority, setPriority] = useState(todo?.priority || 'medium');
-  const [category, setCategory] = useState<Todo['category']>(todo?.category || '日常');
+  const [category, setCategory] = useState<Todo['category']>(todo?.category || 'daily');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const dispatch = useDispatch();
 
@@ -41,7 +26,7 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
       setDescription(todo?.description || '');
       setDueDate(todo?.dueDate || '');
       setPriority(todo?.priority || 'medium');
-      setCategory(todo?.category || '日常');
+      setCategory(todo?.category || 'daily');
     }
   }, [isOpen, todo]);
 
@@ -62,20 +47,29 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
     try {
       setIsSubmitting(true);
 
+      const authToken = localStorage.getItem('authToken');
+      if (!authToken) {
+        console.error('認証トークンがありません');
+        return;
+      }
+
       // バックエンドに送信するデータ
       const todoData = {
         title,
         description,
-        priority: getPriorityValue(priority)
+        priority: getPriorityValue(priority),
+        completed: todo?.completed || false,
+        dueDate: dueDate || null
       };
 
       if (todo) {
         // 既存のタスクを更新
-        const response = await fetch(`${API_URL}/todos/${todo.id}`, {
+        const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${DEV_TOKEN}`
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify(todoData)
         });
@@ -88,19 +82,26 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
             title: updatedTodoData.title,
             description: updatedTodoData.description || '',
             priority: updatedTodoData.priority === 1 ? 'low' : updatedTodoData.priority === 3 ? 'high' : 'medium',
+            completed: updatedTodoData.completed,
+            dueDate: dueDate || null
           };
           dispatch(updateTodo(updatedTodo));
           onClose();
+        } else if (response.status === 401) {
+          // 認証エラー時の処理
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('username');
+          window.location.reload();
         } else {
           console.error('Update todo failed:', await response.text());
         }
       } else {
         // 新規タスクを追加
-        const response = await fetch(`${API_URL}/todos`, {
+        const response = await fetch(`${API_BASE_URL}/todos`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${DEV_TOKEN}`
+            'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify(todoData)
         });
@@ -113,12 +114,12 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
             title: newTodoData.title,
             description: newTodoData.description || '',
             completed: newTodoData.completed,
-            dueDate: null,
+            dueDate: '',
             priority: newTodoData.priority === 1 ? 'low' : newTodoData.priority === 3 ? 'high' : 'medium',
             status: 'pending',
-            creationDate: new Date(newTodoData.created_at),
+            creationDate: newTodoData.created_at,
             completionDate: null,
-            category: '日常',
+            category: 'daily',
           };
           dispatch(addTodo(newTodo));
           onClose();
@@ -167,12 +168,12 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
         </select>
         <select
           value={category}
-          onChange={(e) => setCategory(e.target.value as '仕事' | '日常' | '特別')}
+          onChange={(e) => setCategory(e.target.value as 'work' | 'daily' | 'special')}
           className="w-full mb-4 px-2 py-1 border"
         >
-          <option value="仕事">仕事</option>
-          <option value="日常">日常</option>
-          <option value="特別">特別</option>
+          <option value="work">仕事</option>
+          <option value="daily">日常</option>
+          <option value="special">特別</option>
         </select>
         <button 
           onClick={handleSave} 
