@@ -1,12 +1,33 @@
 import React, { useState, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { Todo } from '../features/todos/Todo';
-import { toggleTodo, removeTodo } from '../features/todos/todoSlice';
+import { toggleTodo, removeTodo, addTodo } from '../features/todos/todoSlice';
 import { API_BASE_URL } from '../config/api';  // API_BASE_URLをインポート
 import TodoEdit from './TodoEdit';
 import { useDrag, useDrop } from 'react-dnd';
 import { useNavigate } from 'react-router-dom';
 
+// カスタムツールチップコンポーネント
+const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        {children}
+      </div>
+      {showTooltip && (
+        <div className="absolute z-10 px-2 py-1 text-sm text-white bg-gray-800 rounded -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
+          {text}
+          <div className="absolute w-2 h-2 bg-gray-800 transform rotate-45 -bottom-1 left-1/2 -translate-x-1/2"></div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface TodoItemProps {
   todo: Todo;
@@ -65,10 +86,18 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
 
     try {
       const todoId = typeof todo.id === 'string' ? parseInt(todo.id, 10) : todo.id;
-      console.log(todo.completed);
       // 現在の状態を反転
       const newCompleted = !todo.completed;
-      console.log(newCompleted);
+      
+      // 即時UI更新
+      const newTodo: Todo = {
+        ...todo,
+        completed: newCompleted,
+        status: newCompleted ? 'completed' : 'pending'
+      };
+      dispatch(toggleTodo(newTodo));
+
+      // バックエンド更新
       const response = await fetch(`${API_BASE_URL}/todos/${todoId}`, {
         method: 'PUT',
         headers: {
@@ -81,29 +110,24 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
         })
       });
       
-      if (response.ok) {
-        const updatedTodo = await response.json();
-        console.log('Updated todo:', updatedTodo);
-        
-        // Todoオブジェクトを更新
-        const newTodo: Todo = {
-          ...todo,
-          completed: updatedTodo.completed,
-          status: updatedTodo.completed ? 'completed' : 'pending'
-        };
-        
-        // Reduxストアを更新
-        dispatch(toggleTodo(newTodo));
-      } else if (response.status === 401) {
-        handleAuthError();
-      } else if (response.status === 404) {
-        console.error('Todo not found:', todoId);
-      } else {
-        const errorText = await response.text();
-        console.error('Toggle todo failed:', errorText);
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleAuthError();
+        } else if (response.status === 404) {
+          console.error('Todo not found:', todoId);
+          // エラー時は元の状態に戻す
+          dispatch(toggleTodo(todo));
+        } else {
+          const errorText = await response.text();
+          console.error('Toggle todo failed:', errorText);
+          // エラー時は元の状態に戻す
+          dispatch(toggleTodo(todo));
+        }
       }
     } catch (error) {
       console.error('Error updating todo:', error);
+      // エラー時は元の状態に戻す
+      dispatch(toggleTodo(todo));
     }
   };
 
@@ -119,6 +143,10 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
       // IDが数値であることを確認
       const todoId = typeof todo.id === 'string' ? parseInt(todo.id, 10) : todo.id;
 
+      // 即時UI更新
+      dispatch(removeTodo(todo.id));
+
+      // バックエンド更新
       const response = await fetch(`${API_BASE_URL}/todos/${todoId}`, {
         method: 'DELETE',
         headers: {
@@ -127,38 +155,44 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
         }
       });
       
-      if (response.ok) {
-        dispatch(removeTodo(todo.id));
-      } else if (response.status === 401) {
-        handleAuthError();
-      } else if (response.status === 404) {
-        console.error('Todo not found:', todoId);
-      } else {
-        console.error('Delete todo failed:', await response.text());
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleAuthError();
+        } else if (response.status === 404) {
+          console.error('Todo not found:', todoId);
+          // エラー時は元の状態に戻す
+          dispatch(addTodo(todo));
+        } else {
+          console.error('Delete todo failed:', await response.text());
+          // エラー時は元の状態に戻す
+          dispatch(addTodo(todo));
+        }
       }
     } catch (error) {
       console.error('Error deleting todo:', error);
+      // エラー時は元の状態に戻す
+      dispatch(addTodo(todo));
     }
   };
 
-  // 日付フォーマット関数を英語に
+  // 日付フォーマット関数を日本語に
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Not set';
+    if (!dateString) return '未設定';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      return new Date(dateString).toLocaleDateString('ja-JP', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
       });
     } catch (error) {
-      return 'Invalid date';
+      return '無効な日付';
     }
   };
 
   return (
     <div
       ref={ref}
-      className="bg-white shadow-md rounded-lg p-4 mb-4 w-96"
+      className="bg-white shadow-md rounded-lg p-4 mb-4 w-[576px] mx-auto"
       style={{ opacity: isDragging ? 0.5 : 1 }}
     >
       <div className="flex items-center justify-between">
@@ -171,15 +205,17 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
           />
         
           <div className="flex flex-col">
-            <label
-              className="text-2xl truncate cursor-pointer"
-              style={{ textDecoration: todo.completed ? 'line-through' : 'none' }}
-              onClick={openEditModal}
-            >
-              {todo.title}
-            </label>
+            <Tooltip text="データを変更">
+              <label
+                className="text-2xl truncate cursor-pointer hover:text-blue-600 hover:underline transition-colors duration-200"
+                style={{ textDecoration: todo.completed ? 'line-through' : 'none' }}
+                onClick={openEditModal}
+              >
+                {todo.title}
+              </label>
+            </Tooltip>
             <label className="text-gray-600">
-              {todo.description || 'No description'}
+              {todo.description || '説明なし'}
             </label>
           </div>
         </div>
@@ -188,16 +224,16 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, index, moveTodo }) => {
           className="bg-blue-800 text-white px-3 py-1 rounded"
           onClick={handleDelete}
         >
-          Delete
+          削除
         </button>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
-        <p><strong>Due Date:</strong> {formatDate(todo.dueDate)}</p>
-        <p><strong>Priority:</strong> {todo.priority}</p>
-        <p><strong>Status:</strong> {todo.status}</p>
-        <p><strong>Created:</strong> {formatDate(todo.creationDate)}</p>
-        <p><strong>Category:</strong> {todo.category}</p>
+        <p><strong>期限:</strong> {formatDate(todo.dueDate)}</p>
+        <p><strong>優先度:</strong> {todo.priority === 'low' ? '低' : todo.priority === 'high' ? '高' : '中'}</p>
+        <p><strong>状態:</strong> {todo.status === 'completed' ? '完了' : '未完了'}</p>
+        <p><strong>作成日:</strong> {formatDate(todo.creationDate)}</p>
+        <p><strong>カテゴリ:</strong> {todo.category === 'work' ? '仕事' : todo.category === 'daily' ? '日常' : '特別'}</p>
       </div>
 
       {isEditModalOpen && (

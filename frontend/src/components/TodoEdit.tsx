@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
-import { addTodo, updateTodo } from '../features/todos/todoSlice'; // Redux actions
+import { addTodo, updateTodo, removeTodo } from '../features/todos/todoSlice'; // Redux actions
 import { API_BASE_URL } from '../config/api';  // API_BASE_URLをインポート
 import { Todo } from '../features/todos/Todo';
 
@@ -64,6 +64,19 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
 
       if (todo) {
         // 既存のタスクを更新
+        // 即時UI更新
+        const updatedTodo: Todo = {
+          ...todo,
+          title,
+          description,
+          priority,
+          dueDate: dueDate || null,
+          category
+        };
+        dispatch(updateTodo(updatedTodo));
+        onClose();
+
+        // バックエンド更新
         const response = await fetch(`${API_BASE_URL}/todos/${todo.id}`, {
           method: 'PUT',
           headers: {
@@ -74,29 +87,38 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
           body: JSON.stringify(todoData)
         });
 
-        if (response.ok) {
-          const updatedTodoData = await response.json();
-          // フロントエンド形式に変換してReduxストアを更新
-          const updatedTodo: Todo = {
-            ...todo,
-            title: updatedTodoData.title,
-            description: updatedTodoData.description || '',
-            priority: updatedTodoData.priority === 1 ? 'low' : updatedTodoData.priority === 3 ? 'high' : 'medium',
-            completed: updatedTodoData.completed,
-            dueDate: dueDate || null
-          };
-          dispatch(updateTodo(updatedTodo));
-          onClose();
-        } else if (response.status === 401) {
-          // 認証エラー時の処理
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('username');
-          window.location.reload();
-        } else {
-          console.error('Update todo failed:', await response.text());
+        if (!response.ok) {
+          if (response.status === 401) {
+            // 認証エラー時の処理
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('username');
+            window.location.reload();
+          } else {
+            console.error('Update todo failed:', await response.text());
+            // エラー時は元の状態に戻す
+            dispatch(updateTodo(todo));
+          }
         }
       } else {
         // 新規タスクを追加
+        // 即時UI更新用の一時ID
+        const tempId = Date.now().toString();
+        const newTodo: Todo = {
+          id: tempId,
+          title,
+          description,
+          completed: false,
+          dueDate: dueDate || null,
+          priority,
+          status: 'pending',
+          creationDate: new Date().toISOString(),
+          completionDate: null,
+          category
+        };
+        dispatch(addTodo(newTodo));
+        onClose();
+
+        // バックエンド更新
         const response = await fetch(`${API_BASE_URL}/todos`, {
           method: 'POST',
           headers: {
@@ -106,29 +128,35 @@ const TodoEdit: React.FC<TodoEditProps> = ({ addMode, todo, isOpen, onClose }) =
           body: JSON.stringify(todoData)
         });
 
-        if (response.ok) {
+        if (!response.ok) {
+          console.error('Add todo failed:', await response.text());
+          // エラー時は元の状態に戻す
+          dispatch(removeTodo(tempId));
+        } else {
           const newTodoData = await response.json();
-          // フロントエンド形式に変換してReduxストアを更新
-          const newTodo: Todo = {
+          // バックエンドから返されたIDで更新
+          dispatch(removeTodo(tempId));
+          const finalTodo: Todo = {
             id: newTodoData.id,
             title: newTodoData.title,
             description: newTodoData.description || '',
             completed: newTodoData.completed,
-            dueDate: '',
+            dueDate: dueDate || null,
             priority: newTodoData.priority === 1 ? 'low' : newTodoData.priority === 3 ? 'high' : 'medium',
             status: 'pending',
             creationDate: newTodoData.created_at,
             completionDate: null,
-            category: 'daily',
+            category
           };
-          dispatch(addTodo(newTodo));
-          onClose();
-        } else {
-          console.error('Add todo failed:', await response.text());
+          dispatch(addTodo(finalTodo));
         }
       }
     } catch (error) {
       console.error('Error saving todo:', error);
+      // エラー時は元の状態に戻す
+      if (todo) {
+        dispatch(updateTodo(todo));
+      }
     } finally {
       setIsSubmitting(false);
     }

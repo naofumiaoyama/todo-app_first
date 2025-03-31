@@ -80,7 +80,7 @@ const todoSlice = createSlice({
         state.todos[index] = action.payload;  // 完全なTodoオブジェクトで更新
       }
     },
-    removeTodo: (state, action: PayloadAction<number>) => {
+    removeTodo: (state, action: PayloadAction<number | string>) => {
       state.todos = state.todos.filter((todo) => todo.id !== action.payload);
     },
     updateTodo: (state, action: PayloadAction<Todo>) => {
@@ -119,9 +119,9 @@ const todoSlice = createSlice({
           dueDate: null,
           priority: action.payload.priority === 1 ? 'low' : action.payload.priority === 3 ? 'high' : 'medium',
           status: action.payload.completed ? 'completed' : 'pending',
-          creationDate: new Date(action.payload.created_at),
+          creationDate: new Date(action.payload.created_at).toISOString(),
           completionDate: null,
-          category: 'general',
+          category: 'daily',
         };
         state.todos.push(newTodo);
       })

@@ -1,6 +1,6 @@
 // src/features/todos/Todo.ts
 export interface Todo {
-  id: number;  // 数値型であることを確認
+  id: number | string;  // 数値型と文字列型の両方を受け付ける
   title: string;
   description: string;
   completed: boolean;
